@@ -2,394 +2,362 @@ import json
 import re
 import time
 import shutil
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import List, Dict, Optional, Tuple
 
 from bs4 import BeautifulSoup
+
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.action_chains import ActionChains
+
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+from selenium.common.exceptions import (
+    ElementClickInterceptedException,
+    StaleElementReferenceException,
+    TimeoutException,
+)
 
 BASE = "https://web-scraping.dev"
 
 
-def create_driver() -> webdriver.Chrome:
-    chrome_path = (
-        shutil.which("chromium")
-        or shutil.which("chromium-browser")
-        or shutil.which("google-chrome")
-        or shutil.which("google-chrome-stable")
-    )
-    driver_path = shutil.which("chromedriver")
-
-    if not chrome_path:
-        raise RuntimeError("Chromium not found. Add pkgs.chromium to dev.nix and rebuild.")
-    if not driver_path:
-        raise RuntimeError("chromedriver not found. Add pkgs.chromedriver to dev.nix and rebuild.")
-
-    options = webdriver.ChromeOptions()
-    options.binary_location = chrome_path
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1400,900")
-
-    service = Service(driver_path)
-    driver = webdriver.Chrome(service=service, options=options)
-    driver.set_page_load_timeout(40)
-    return driver
+# -----------------------------
+# Helpers
+# -----------------------------
+def _clean(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "")).strip()
 
 
-def _clean_text(x: str) -> str:
-    return re.sub(r"\s+", " ", (x or "")).strip()
+def _parse_date_to_iso(s: str) -> Optional[str]:
+    """Returns YYYY-MM-DD if possible, else None."""
+    s = _clean(s)
 
+    # Already ISO inside the text?
+    m = re.search(r"\b(20\d{2})-(\d{2})-(\d{2})\b", s)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
 
-def _extract_price(text: str) -> Optional[str]:
-    m = re.search(r"\$\s?\d+(?:\.\d{2})?", text)
-    return m.group(0).replace(" ", "") if m else None
+    # Strip common prefixes
+    s2 = s.replace("Reviewed on", "").replace("on", "").strip()
 
-
-def _safe_get_text(el) -> str:
-    return _clean_text(el.get_text(" ", strip=True)) if el else ""
-
-
-# -------------------- PRODUCTS (pagination pages) --------------------
-
-def parse_products_html(html: str, page: int) -> List[Dict]:
-    soup = BeautifulSoup(html, "html.parser")
-
-    # Prefer anchors that look like product detail links (usually only exist inside the list)
-    main = soup.find("main") or soup
-    link_re = re.compile(r"^/(?:products|product)/\d+", re.IGNORECASE)
-    product_links = [a for a in main.select("a[href]") if link_re.search(a.get("href", ""))]
-
-    items: List[Dict] = []
-    if product_links:
-        for a in product_links:
-            name = _safe_get_text(a)
-            if not name or len(name) < 2:
-                continue
-
-            # Card/container: nearest reasonably-sized block element
-            card = a.find_parent(["article", "li", "div"], class_=re.compile(r"card|product|rounded|shadow", re.I))
-            if not card:
-                card = a.find_parent(["article", "li", "div"])  # fallback
-
-            desc = ""
-            price = None
-            if card:
-                # description: first paragraph that isn't just price
-                for p in card.select("p"):
-                    t = _safe_get_text(p)
-                    if t and not _extract_price(t):
-                        desc = t
-                        break
-
-                # price: explicit class or regex from card text
-                price_el = card.select_one(".price, [class*='price'], [data-testid*='price']")
-                price = _safe_get_text(price_el) if price_el else _extract_price(_safe_get_text(card))
-
-            items.append({
-                "name": name,
-                "description": desc,
-                "price": price,
-                "page": page,
-            })
-
-    # If link-based extraction failed (0 items), fallback to more generic card parsing
-    if not items:
-        # Robust: product cards are often "div.card" or "div.product"
-        cards = main.select("div.card")
-        if not cards:
-            cards = main.select("[class*='product'], article, li")
-
-        for c in cards:
-            name_el = c.select_one("h2, h3, h2 a, h3 a, a")
-            name = _safe_get_text(name_el)
-            if not name or len(name) < 2:
-                continue
-
-            p_el = c.select_one("p")
-            desc = _safe_get_text(p_el)
-
-            price_el = c.select_one(".price, [class*='price'], [data-testid*='price']")
-            price = _safe_get_text(price_el) if price_el else _extract_price(_safe_get_text(c))
-
-            items.append({
-                "name": name,
-                "description": desc,
-                "price": price,
-                "page": page,
-            })
-
-    # Deduplicate внутри страницы
-    seen = set()
-    uniq = []
-    for it in items:
-        key = (it["name"], it.get("price"))
-        if key not in seen:
-            seen.add(key)
-            uniq.append(it)
-
-    return uniq
-
-
-def scrape_products(driver: webdriver.Chrome, max_pages: int = 30) -> List[Dict]:
-    """Scrape products.
-
-    Preferred strategy: iterate `?page=N` (fast, no UI interaction).
-    Fallback strategy: click pagination "Next" if query param is ignored.
-    """
-
-    def scrape_by_page_param() -> List[Dict]:
-        all_items: List[Dict] = []
-        seen = set()
-        for page in range(1, max_pages + 1):
-            url = f"{BASE}/products?page={page}"
-            driver.get(url)
-            WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-            page_items = parse_products_html(driver.page_source, page=page)
-            if not page_items:
-                break
-
-            for it in page_items:
-                key = (it.get("name"), it.get("price"))
-                if key in seen:
-                    continue
-                seen.add(key)
-                all_items.append(it)
-        return all_items
-
-    def scrape_by_click() -> List[Dict]:
-        all_items: List[Dict] = []
-        seen = set()
-        driver.get(f"{BASE}/products")
-        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-        for page in range(1, max_pages + 1):
-            page_items = parse_products_html(driver.page_source, page=page)
-            for it in page_items:
-                key = (it.get("name"), it.get("price"))
-                if key in seen:
-                    continue
-                seen.add(key)
-                all_items.append(it)
-
-            # Try to find a "next" control (anchor or button)
-            next_el = None
-            for how in (
-                (By.CSS_SELECTOR, "a[rel='next']"),
-                (By.XPATH, "//a[contains(., '>')]"),
-                (By.XPATH, "//a[contains(., 'Next')]"),
-                (By.XPATH, "//button[contains(., 'Next')]"),
-                (By.XPATH, "//a[contains(., '›')]"),
-            ):
-                try:
-                    next_el = driver.find_element(*how)
-                    if next_el:
-                        break
-                except Exception:
-                    continue
-
-            if not next_el:
-                break
-
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_el)
-            time.sleep(0.2)
-            try:
-                next_el.click()
-            except Exception:
-                driver.execute_script("arguments[0].click();", next_el)
-
-            time.sleep(1.0)
-            WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-        return all_items
-
-    items = scrape_by_page_param()
-    if items:
-        return items
-
-    # Fallback: UI pagination
-    return scrape_by_click()
-
-
-# -------------------- REVIEWS ("Load More" until button disappears) --------------------
-
-DATE_RE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
-
-
-def parse_reviews_html(html: str) -> List[Dict]:
-    soup = BeautifulSoup(html, "html.parser")
-
-    # Reviews grid/cards
-    cards = soup.select("div.card")
-    if not cards:
-        cards = soup.select("[class*='review'], article, li")
-
-    items = []
-    for c in cards:
-        txt = _safe_get_text(c)
-        date_m = DATE_RE.search(txt)
-        if not date_m:
-            continue
-        date_str = date_m.group(1)
-
-        # review text: pick a paragraph that is not empty and not just date
-        p_candidates = c.select("p")
-        review_text = ""
-        for p in p_candidates:
-            t = _safe_get_text(p)
-            if t and not DATE_RE.search(t):
-                review_text = t
-                break
-
-        if not review_text:
-            # fallback: remove date from full text
-            review_text = _clean_text(DATE_RE.sub("", txt))
-
-        # rating: count star svgs if present (optional)
-        rating = None
-        star_svgs = c.select("svg")
-        if star_svgs:
-            # usually 5 stars exist, but sometimes only filled stars are present
-            # We'll approximate by counting svgs near top if many exist
-            if len(star_svgs) >= 3:
-                rating = min(5, len(star_svgs))
-
-        items.append({
-            "date": date_str,
-            "text": review_text,
-            "rating": rating
-        })
-
-    # Deduplicate
-    seen = set()
-    uniq = []
-    for it in items:
-        key = (it["date"], it["text"][:80])
-        if key not in seen:
-            seen.add(key)
-            uniq.append(it)
-
-    return uniq
-
-
-def scrape_reviews(driver: webdriver.Chrome, max_clicks: int = 100) -> List[Dict]:
-    url = f"{BASE}/reviews"
-    driver.get(url)
-    WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-    def get_count() -> int:
-        return len(parse_reviews_html(driver.page_source))
-
-    prev_count = get_count()
-
-    for _ in range(max_clicks):
-        # try find "Load More" button by visible text
+    for fmt in ("%b %d %Y", "%B %d %Y"):
         try:
-            btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Load More')]"))
-            )
+            return datetime.strptime(s2, fmt).date().isoformat()
         except Exception:
-            # no button -> finish
-            break
+            pass
 
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
-        time.sleep(0.2)
-        btn.click()
-        time.sleep(1.0)
-
-        new_count = get_count()
-        if new_count <= prev_count:
-            # защита от бесконечного цикла
-            break
-        prev_count = new_count
-
-    return parse_reviews_html(driver.page_source)
+    return None
 
 
-# -------------------- TESTIMONIALS (scroll to end) --------------------
+def _safe_text(el) -> str:
+    try:
+        return _clean(el.get_text(" ", strip=True))
+    except Exception:
+        try:
+            return _clean(el.text)
+        except Exception:
+            return ""
 
-def parse_testimonials_html(html: str) -> List[Dict]:
-    soup = BeautifulSoup(html, "html.parser")
-
-    blocks = soup.select("[class*='testimonial'], div.card, blockquote")
-    items = []
-
-    for b in blocks:
-        text = ""
-        author = ""
-
-        # Try find author-like element
-        author_el = b.select_one("[class*='author'], strong, h3, h4")
-        author = _safe_get_text(author_el)
-
-        # Text: best paragraph / blockquote content
-        if b.name == "blockquote":
-            text = _safe_get_text(b)
-        else:
-            p = b.select_one("p")
-            text = _safe_get_text(p) if p else _safe_get_text(b)
-
-        text = _clean_text(text)
-        author = _clean_text(author)
-
-        # simple validation
-        if len(text) < 10:
-            continue
-
-        items.append({"author": author, "text": text})
-
-    # Deduplicate
-    seen = set()
-    uniq = []
-    for it in items:
-        key = (it.get("author", ""), it["text"][:80])
-        if key not in seen:
-            seen.add(key)
-            uniq.append(it)
-
-    return uniq
-
-
-def scrape_testimonials(driver: webdriver.Chrome, max_scrolls: int = 60) -> List[Dict]:
-    url = f"{BASE}/testimonials"
-    driver.get(url)
-    WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-
-    last_height = driver.execute_script("return document.body.scrollHeight")
-    stable_rounds = 0
-
-    for _ in range(max_scrolls):
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(1.0)
-
-        new_height = driver.execute_script("return document.body.scrollHeight")
-        if new_height == last_height:
-            stable_rounds += 1
-            if stable_rounds >= 3:  # 3 раза подряд не меняется -> конец
-                break
-        else:
-            stable_rounds = 0
-            last_height = new_height
-
-    return parse_testimonials_html(driver.page_source)
-
-
-# -------------------- MAIN --------------------
 
 def save_json(path: str, data: List[Dict]) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+# -----------------------------
+# Driver
+# -----------------------------
+def create_driver(headless: bool = True) -> webdriver.Chrome:
+    """
+    Works in:
+    - Firebase/IDX (chromium + chromedriver from nix)
+    - GitHub Actions (Chrome exists; Selenium Manager can handle driver)
+    """
+    chrome_bin = (
+        shutil.which("chromium")
+        or shutil.which("chromium-browser")
+        or shutil.which("google-chrome")
+        or shutil.which("google-chrome-stable")
+    )
+    chromedriver_bin = shutil.which("chromedriver")
+
+    options = webdriver.ChromeOptions()
+    if chrome_bin:
+        options.binary_location = chrome_bin
+
+    if headless:
+        options.add_argument("--headless=new")
+
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1400,900")
+
+    # If chromedriver exists -> use it, else let Selenium Manager handle it
+    if chromedriver_bin:
+        service = Service(chromedriver_bin)
+        driver = webdriver.Chrome(service=service, options=options)
+    else:
+        driver = webdriver.Chrome(options=options)
+
+    driver.set_page_load_timeout(45)
+    return driver
+
+
+def wait_page(driver, timeout: int = 15):
+    WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+
+
+def safe_click(driver, element):
+    """
+    Robust click that avoids ElementClickInterceptedException in headless/CI.
+    """
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
+    time.sleep(0.2)
+    driver.execute_script("window.scrollBy(0, -120);")  # avoid sticky footer/header overlap
+    time.sleep(0.15)
+
+    try:
+        ActionChains(driver).move_to_element(element).pause(0.1).click(element).perform()
+        return
+    except Exception:
+        pass
+
+    # JS click fallback
+    driver.execute_script("arguments[0].click();", element)
+
+
+def find_clickable_by_text(driver, text: str):
+    """
+    Find visible, enabled button or link with exact text (case-insensitive).
+    """
+    t = text.strip().lower()
+    for el in driver.find_elements(By.CSS_SELECTOR, "button, a"):
+        try:
+            if el.is_displayed() and el.is_enabled() and el.text.strip().lower() == t:
+                return el
+        except StaleElementReferenceException:
+            continue
+    return None
+
+
+# -----------------------------
+# PRODUCTS (pagination pages ?page=)
+# -----------------------------
+def extract_products(html: str, page: int, url: str) -> List[Dict]:
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Common pattern: cards
+    cards = soup.select("div.card, article, div[class*='product']")
+    items = []
+
+    for c in cards:
+        name_el = c.select_one("h2, h3, h2 a, h3 a, a")
+        name = _safe_text(name_el)
+        if not name:
+            continue
+
+        desc_el = c.select_one("p")
+        desc = _safe_text(desc_el)
+
+        price_el = c.select_one(".price, [class*='price']")
+        price = _safe_text(price_el)
+
+        items.append(
+            {
+                "name": name,
+                "description": desc,
+                "price": price if price else None,
+                "page": page,
+                "source_url": url,
+            }
+        )
+
+    # Dedup
+    seen = set()
+    out = []
+    for it in items:
+        key = (it["name"], it.get("price"))
+        if key not in seen:
+            seen.add(key)
+            out.append(it)
+    return out
+
+
+def scrape_products(driver, max_pages: int = 50) -> List[Dict]:
+    all_items: List[Dict] = []
+    for page in range(1, max_pages + 1):
+        url = f"{BASE}/products?page={page}"
+        driver.get(url)
+        wait_page(driver)
+        time.sleep(0.7)
+
+        items = extract_products(driver.page_source, page=page, url=url)
+        if not items:
+            break
+        all_items.extend(items)
+
+    return all_items
+
+
+# -----------------------------
+# REVIEWS (Load More until disappears)
+# -----------------------------
+DATE_RE = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
+
+
+def extract_reviews(html: str, url: str) -> List[Dict]:
+    soup = BeautifulSoup(html, "html.parser")
+    cards = soup.select("div.review, div[class*='review'], div.card, article, li")
+
+    items = []
+    for c in cards:
+        text_all = _safe_text(c)
+        m = DATE_RE.search(text_all)
+        if not m:
+            continue
+
+        iso_date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+
+        # pick the longest paragraph as review text
+        ps = c.select("p")
+        best = ""
+        for p in ps:
+            t = _safe_text(p)
+            if t and not DATE_RE.search(t) and len(t) > len(best):
+                best = t
+
+        if not best:
+            # fallback: remove date from full text
+            best = _clean(DATE_RE.sub("", text_all))
+
+        if len(best) < 5:
+            continue
+
+        items.append({"date": iso_date, "text": best, "source_url": url})
+
+    # Dedup
+    seen = set()
+    out = []
+    for it in items:
+        key = (it["date"], it["text"][:80])
+        if key not in seen:
+            seen.add(key)
+            out.append(it)
+    return out
+
+
+def scrape_reviews(driver, max_clicks: int = 250) -> List[Dict]:
+    url = f"{BASE}/reviews"
+    driver.get(url)
+    wait_page(driver)
+    time.sleep(1.0)
+
+    def reviews_count() -> int:
+        return len(extract_reviews(driver.page_source, url=url))
+
+    prev = reviews_count()
+
+    for _ in range(max_clicks):
+        btn = find_clickable_by_text(driver, "Load More")
+        if not btn:
+            break
+
+        try:
+            safe_click(driver, btn)
+        except ElementClickInterceptedException:
+            # last resort: JS click
+            try:
+                driver.execute_script("arguments[0].click();", btn)
+            except Exception:
+                break
+        except StaleElementReferenceException:
+            continue
+
+        # wait until more reviews appear or button disappears
+        try:
+            WebDriverWait(driver, 10).until(
+                lambda d: reviews_count() > prev or find_clickable_by_text(d, "Load More") is None
+            )
+        except TimeoutException:
+            # no change => stop (avoids infinite loops)
+            cur = reviews_count()
+            if cur <= prev:
+                break
+
+        cur = reviews_count()
+        if cur <= prev:
+            break
+        prev = cur
+        time.sleep(0.25)
+
+    return extract_reviews(driver.page_source, url=url)
+
+
+# -----------------------------
+# TESTIMONIALS (scroll to end)
+# -----------------------------
+def extract_testimonials(html: str, url: str) -> List[Dict]:
+    soup = BeautifulSoup(html, "html.parser")
+    blocks = soup.select("div.testimonial, div[class*='testimonial'], blockquote, div.card, article")
+
+    items = []
+    for b in blocks:
+        # author
+        author_el = b.select_one("[class*='author'], strong, h3, h4")
+        author = _safe_text(author_el) or None
+
+        # text
+        text_el = b.select_one("p") if b.name != "blockquote" else b
+        text = _safe_text(text_el)
+        if len(text) < 10:
+            continue
+
+        items.append({"author": author, "text": text, "source_url": url})
+
+    # Dedup
+    seen = set()
+    out = []
+    for it in items:
+        key = (it.get("author") or "", it["text"][:80])
+        if key not in seen:
+            seen.add(key)
+            out.append(it)
+    return out
+
+
+def scrape_testimonials(driver, max_scrolls: int = 200) -> List[Dict]:
+    url = f"{BASE}/testimonials"
+    driver.get(url)
+    wait_page(driver)
+    time.sleep(1.0)
+
+    last_height = driver.execute_script("return document.body.scrollHeight")
+    stable = 0
+
+    for _ in range(max_scrolls):
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(0.9)
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            stable += 1
+            if stable >= 3:
+                break
+        else:
+            stable = 0
+            last_height = new_height
+
+    return extract_testimonials(driver.page_source, url=url)
+
+
+# -----------------------------
+# MAIN
+# -----------------------------
 if __name__ == "__main__":
-    driver = create_driver()
+    driver = create_driver(headless=True)
     try:
         products = scrape_products(driver)
         save_json("products.json", products)
