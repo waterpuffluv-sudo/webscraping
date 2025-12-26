@@ -1,21 +1,32 @@
-import os
 import json
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-# Важно: не плодим лишние потоки токенайзера
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-st.set_page_config(page_title="Brand Reputation Monitor (2023)", layout="wide")
+# ----------------------------
+# CONFIG
+# ----------------------------
+st.set_page_config(
+    page_title="E-commerce Brand Reputation Monitor (2023)",
+    layout="wide",
+)
 
 DATA_DIR = Path(".")
-PRODUCTS_PATH = DATA_DIR / "products.json"
-TESTIMONIALS_PATH = DATA_DIR / "testimonials.json"
-REVIEWS_PATH = DATA_DIR / "reviews.json"
+PRODUCTS_FILE = DATA_DIR / "products.json"
+TESTIMONIALS_FILE = DATA_DIR / "testimonials.json"
+
+# Variant A: precomputed sentiment file
+REVIEWS_SCORED_FILE = DATA_DIR / "reviews_scored.json"
+
+# Fallback (if you still keep raw reviews.json)
+REVIEWS_RAW_FILE = DATA_DIR / "reviews.json"
 
 
+# ----------------------------
+# HELPERS
+# ----------------------------
 @st.cache_data
 def load_json(path: Path):
     if not path.exists():
@@ -24,197 +35,193 @@ def load_json(path: Path):
         return json.load(f)
 
 
-def normalize_products(raw):
-    df = pd.DataFrame(raw)
-    if df.empty:
-        return df
-    # на всякий случай поддержка разных ключей
-    df = df.rename(columns={
-        "Product Name": "name",
-        "Description": "description",
-        "title": "name",
-    })
-    return df
-
-
-def normalize_testimonials(raw):
-    df = pd.DataFrame(raw)
-    if df.empty:
-        return df
-    df = df.rename(columns={
-        "Author": "author",
-        "Testimonial": "text",
-        "testimonial": "text",
-    })
-    return df
-
-
-def normalize_reviews(raw):
-    """
-    Ожидаемый формат (как у тебя):
-    {
-      "date": "2023-05-18",
-      "text": "...",
-      "source_url": "https://web-scraping.dev/reviews"
-    }
-    """
-    df = pd.DataFrame(raw)
+def to_df(items, kind: str) -> pd.DataFrame:
+    df = pd.DataFrame(items)
     if df.empty:
         return df
 
-    # гарантируем нужные колонки
-    if "date" not in df.columns:
-        df["date"] = None
-    if "text" not in df.columns:
-        df["text"] = ""
-    if "source_url" not in df.columns:
-        df["source_url"] = ""
+    # Normalize expected columns for each dataset
+    if kind == "products":
+        # common columns: name/title, description, price, source_url, page
+        # keep whatever exists, but try to order nicely
+        preferred = [c for c in ["name", "title", "description", "price", "page", "source_url"] if c in df.columns]
+        rest = [c for c in df.columns if c not in preferred]
+        return df[preferred + rest]
 
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")  # ISO отлично парсится
-    df["text"] = df["text"].astype(str)
+    if kind == "testimonials":
+        preferred = [c for c in ["author", "text", "source_url"] if c in df.columns]
+        rest = [c for c in df.columns if c not in preferred]
+        return df[preferred + rest]
+
+    if kind == "reviews":
+        # date parsing
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        # standardize text col name
+        if "review_text" in df.columns and "text" not in df.columns:
+            df["text"] = df["review_text"]
+        # order columns
+        preferred = [c for c in ["date", "text", "sentiment", "confidence", "source_url"] if c in df.columns]
+        rest = [c for c in df.columns if c not in preferred]
+        return df[preferred + rest]
 
     return df
 
 
-# --- Sentiment (ленивая загрузка) ---
-@st.cache_resource
-def get_sentiment_pipe():
-    # импорт внутри, чтобы приложение не падало до клика и не тратило память на старте
-    from transformers import pipeline
-    return pipeline(
-        "sentiment-analysis",
-        model="distilbert-base-uncased-finetuned-sst-2-english",
-    )
+def month_options_2023():
+    months = pd.date_range("2023-01-01", "2023-12-01", freq="MS")
+    return [m.strftime("%b %Y") for m in months]
 
 
-@st.cache_data(show_spinner=False)
-def analyze_texts(texts: tuple[str, ...]):
-    pipe = get_sentiment_pipe()
-    # батчи + обрезка текста = быстрее и стабильнее на Render
-    results = pipe(
-        list(texts),
-        batch_size=8,
-        truncation=True,
-        max_length=256,
-    )
-    return results
+def filter_reviews_2023_by_month(df: pd.DataFrame, month_label: str) -> pd.DataFrame:
+    if df.empty or "date" not in df.columns:
+        return df
+
+    month_dt = pd.to_datetime(month_label, format="%b %Y", errors="coerce")
+    if pd.isna(month_dt):
+        return df
+
+    start = month_dt
+    end = month_dt + pd.offsets.MonthBegin(1)
+    mask = (df["date"] >= start) & (df["date"] < end)
+    return df.loc[mask].copy()
 
 
 # ----------------------------
-# Load data
+# LOAD DATA
 # ----------------------------
-products_df = normalize_products(load_json(PRODUCTS_PATH))
-testimonials_df = normalize_testimonials(load_json(TESTIMONIALS_PATH))
-reviews_df = normalize_reviews(load_json(REVIEWS_PATH))
+products_raw = load_json(PRODUCTS_FILE)
+testimonials_raw = load_json(TESTIMONIALS_FILE)
+
+# Prefer scored reviews; fallback to raw
+reviews_raw = load_json(REVIEWS_SCORED_FILE)
+if not reviews_raw:
+    reviews_raw = load_json(REVIEWS_RAW_FILE)
+
+products_df = to_df(products_raw, "products")
+testimonials_df = to_df(testimonials_raw, "testimonials")
+reviews_df = to_df(reviews_raw, "reviews")
+
 
 # ----------------------------
-# UI
+# UI: HEADER + NAV
 # ----------------------------
 st.title("E-commerce Brand Reputation Monitor (2023)")
-st.caption("Scraped from web-scraping.dev (Products / Testimonials / Reviews) + Sentiment Analysis")
+st.caption("Scraped from web-scraping.dev (Products / Testimonials / Reviews)")
 
-st.sidebar.header("Navigation")
+st.sidebar.title("Navigation")
 page = st.sidebar.radio("Go to", ["Products", "Testimonials", "Reviews"], index=2)
 
+# ----------------------------
+# PAGE: PRODUCTS
+# ----------------------------
 if page == "Products":
     st.header("Products")
+
     if products_df.empty:
         st.warning("products.json is empty or missing.")
     else:
-        st.dataframe(products_df, use_container_width=True)
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            q = st.text_input("Search (name/description)", "")
+        with col2:
+            sort_col = st.selectbox("Sort by", options=[c for c in products_df.columns], index=0)
 
+        df = products_df.copy()
+        if q.strip():
+            ql = q.strip().lower()
+            cols = [c for c in ["name", "title", "description"] if c in df.columns]
+            if cols:
+                mask = False
+                for c in cols:
+                    mask = mask | df[c].astype(str).str.lower().str.contains(ql, na=False)
+                df = df.loc[mask]
+
+        if sort_col in df.columns:
+            df = df.sort_values(sort_col, kind="stable")
+
+        st.dataframe(df, use_container_width=True)
+
+# ----------------------------
+# PAGE: TESTIMONIALS
+# ----------------------------
 elif page == "Testimonials":
     st.header("Testimonials")
+
     if testimonials_df.empty:
         st.warning("testimonials.json is empty or missing.")
     else:
-        st.dataframe(testimonials_df, use_container_width=True)
+        q = st.text_input("Search (author/text)", "")
+        df = testimonials_df.copy()
 
+        if q.strip():
+            ql = q.strip().lower()
+            cols = [c for c in ["author", "text"] if c in df.columns]
+            if cols:
+                mask = False
+                for c in cols:
+                    mask = mask | df[c].astype(str).str.lower().str.contains(ql, na=False)
+                df = df.loc[mask]
+
+        st.dataframe(df, use_container_width=True)
+
+# ----------------------------
+# PAGE: REVIEWS (NO MODEL RUN)
+# ----------------------------
 else:
-    st.header("Reviews — Sentiment Analysis")
+    st.header("Reviews — Sentiment Analysis (precomputed)")
 
     if reviews_df.empty:
-        st.warning("reviews.json is empty or missing.")
+        st.warning("No reviews found (reviews_scored.json or reviews.json missing/empty).")
         st.stop()
 
-    # только 2023
-    reviews_2023 = reviews_df.dropna(subset=["date"]).copy()
-    reviews_2023 = reviews_2023[reviews_2023["date"].dt.year == 2023].copy()
+    # Sidebar controls (make it fast by default)
+    st.sidebar.subheader("Reviews limits")
+    default_max = 10  # minimal by default
+    max_to_show = st.sidebar.slider("Max reviews to show", 5, 50, default_max, step=5)
 
-    if reviews_2023.empty:
-        st.warning("No valid 2023 reviews found.")
-        st.stop()
+    # Month selector
+    months = month_options_2023()
+    selected_month = st.select_slider("Select a month (2023)", options=months, value="Jan 2023")
 
-    # выбор месяца
-    months = pd.period_range("2023-01", "2023-12", freq="M")
-    month_labels = [m.strftime("%b %Y") for m in months]
-
-    selected_label = st.select_slider(
-        "Select a month (2023)",
-        options=month_labels,
-        value=month_labels[0],
-    )
-    selected_period = pd.Period(selected_label, freq="M")
-
-    filtered = reviews_2023[reviews_2023["date"].dt.to_period("M") == selected_period].copy()
-    filtered = filtered.sort_values("date", ascending=False)
+    filtered = filter_reviews_2023_by_month(reviews_df, selected_month)
 
     if filtered.empty:
-        st.info(f"No reviews found for {selected_label}.")
+        st.info(f"No reviews found for {selected_month}.")
         st.stop()
 
-    # ---- Оптимизация: по умолчанию минимум ----
-    st.sidebar.subheader("Reviews limits")
-    max_n = st.sidebar.slider("Max reviews to analyze", 5, 30, 5, step=5)  # дефолт 5
-    auto_run = st.sidebar.checkbox("Auto-run sentiment", value=False)       # дефолт OFF
+    # If sentiment exists -> summary + chart
+    has_sentiment = "sentiment" in filtered.columns
+    has_conf = "confidence" in filtered.columns
 
-    # берем только N последних
-    filtered_n = filtered.head(max_n).copy()
+    if has_sentiment:
+        left, right = st.columns([2, 1])
+        with left:
+            counts = filtered["sentiment"].value_counts()
+            st.subheader("Sentiment distribution")
+            st.bar_chart(counts)
 
-    st.subheader("Preview (fast)")
-    st.dataframe(
-        filtered_n[["date", "text", "source_url"]],
-        use_container_width=True,
-        height=320
-    )
+        with right:
+            st.subheader("Metrics")
+            st.metric("Total reviews in month", int(len(filtered)))
+            if "POSITIVE" in counts.index:
+                st.metric("Positive", int(counts.get("POSITIVE", 0)))
+            if "NEGATIVE" in counts.index:
+                st.metric("Negative", int(counts.get("NEGATIVE", 0)))
+            if has_conf:
+                avg_conf = float(pd.to_numeric(filtered["confidence"], errors="coerce").mean())
+                if pd.notna(avg_conf):
+                    st.metric("Avg confidence", f"{avg_conf:.2%}")
 
-    run_now = auto_run or st.button("Run sentiment analysis")
+        # Optional filter
+        sentiments_available = sorted(filtered["sentiment"].dropna().unique().tolist())
+        chosen = st.multiselect("Filter by sentiment", sentiments_available, default=sentiments_available)
+        if chosen:
+            filtered = filtered[filtered["sentiment"].isin(chosen)]
 
-    if not run_now:
-        st.info("Sentiment analysis is paused. Enable Auto-run or press the button.")
-        st.stop()
+    # Sort newest first, then limit (FAST DEFAULT)
+    if "date" in filtered.columns:
+        filtered = filtered.sort_values("date", ascending=False, kind="stable")
 
-    # ---- Анализ ----
-    try:
-        with st.spinner("Running sentiment analysis (first run may download the model)..."):
-            texts = tuple(filtered_n["text"].astype(str).tolist())
-            results = analyze_texts(texts)
-
-        analyzed = filtered_n.copy()
-        analyzed["sentiment"] = [r["label"] for r in results]
-        analyzed["confidence"] = [float(r["score"]) for r in results]
-
-    except Exception as e:
-        st.error("Sentiment model failed to load/run. Check requirements/runtime on Render.")
-        st.exception(e)
-        st.stop()
-
-    # ---- Визуализация ----
-    st.subheader("Results")
-    col1, col2 = st.columns([1, 2])
-
-    with col1:
-        st.metric("Reviews analyzed", len(analyzed))
-        st.metric("Avg confidence", f"{analyzed['confidence'].mean():.2%}")
-
-    with col2:
-        counts = analyzed["sentiment"].value_counts().reindex(["POSITIVE", "NEGATIVE"], fill_value=0)
-        st.bar_chart(counts)
-
-    st.subheader("Reviews + sentiment")
-    st.dataframe(
-        analyzed[["date", "text", "sentiment", "confidence", "source_url"]],
-        use_container_width=True,
-        height=420
-    )
-
+    st.subheader(f"Reviews for {selected_month} (showing up to {max_to_show})")
+    st.dataframe(filtered.head(max_to_show), use_container_width=True)
