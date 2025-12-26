@@ -129,7 +129,7 @@ else:
 
     # Memory-safe limit (Render free tier friendly)
     st.sidebar.subheader("Reviews limits")
-    max_n = st.sidebar.slider("Max reviews to analyze", min_value=20, max_value=200, value=80, step=10)
+    max_n = st.sidebar.slider("Max reviews to analyze", min_value=20, max_value=200, value=40, step=10)
 
     if len(filtered) > max_n:
         st.warning(
