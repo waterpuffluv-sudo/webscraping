@@ -4,15 +4,13 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from transformers import pipeline
 
-# меньше лишних потоков токенайзера
+# Важно: не плодим лишние потоки токенайзера
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 st.set_page_config(page_title="Brand Reputation Monitor (2023)", layout="wide")
 
-DATA_DIR = Path(".")  # если сделаешь папку data/, поменяй на Path("data")
-
+DATA_DIR = Path(".")
 PRODUCTS_PATH = DATA_DIR / "products.json"
 TESTIMONIALS_PATH = DATA_DIR / "testimonials.json"
 REVIEWS_PATH = DATA_DIR / "reviews.json"
@@ -30,6 +28,7 @@ def normalize_products(raw):
     df = pd.DataFrame(raw)
     if df.empty:
         return df
+    # на всякий случай поддержка разных ключей
     df = df.rename(columns={
         "Product Name": "name",
         "Description": "description",
@@ -50,38 +49,38 @@ def normalize_testimonials(raw):
     return df
 
 
-def parse_review_date(x):
-    if pd.isna(x):
-        return pd.NaT
-    s = str(x).strip()
-    s = s.replace("Reviewed on", "").replace("reviewed on", "").strip()
-    s = s.replace("on", "").strip()
-    return pd.to_datetime(s, errors="coerce")
-
-
 def normalize_reviews(raw):
+    """
+    Ожидаемый формат (как у тебя):
+    {
+      "date": "2023-05-18",
+      "text": "...",
+      "source_url": "https://web-scraping.dev/reviews"
+    }
+    """
     df = pd.DataFrame(raw)
     if df.empty:
         return df
 
-    df = df.rename(columns={
-        "review_text": "text",
-        "review_date": "date",
-    })
-
+    # гарантируем нужные колонки
     if "date" not in df.columns:
-        df["date"] = pd.NaT
-    df["date"] = df["date"].apply(parse_review_date)
-
+        df["date"] = None
     if "text" not in df.columns:
         df["text"] = ""
+    if "source_url" not in df.columns:
+        df["source_url"] = ""
+
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")  # ISO отлично парсится
+    df["text"] = df["text"].astype(str)
 
     return df
 
 
+# --- Sentiment (ленивая загрузка) ---
 @st.cache_resource
 def get_sentiment_pipe():
-    # грузится ТОЛЬКО когда реально запускаешь анализ (по кнопке)
+    # импорт внутри, чтобы приложение не падало до клика и не тратило память на старте
+    from transformers import pipeline
     return pipeline(
         "sentiment-analysis",
         model="distilbert-base-uncased-finetuned-sst-2-english",
@@ -89,11 +88,11 @@ def get_sentiment_pipe():
 
 
 @st.cache_data(show_spinner=False)
-def analyze_texts(texts: list[str]):
+def analyze_texts(texts: tuple[str, ...]):
     pipe = get_sentiment_pipe()
-    # batch + truncation для стабильности на хостинге
+    # батчи + обрезка текста = быстрее и стабильнее на Render
     results = pipe(
-        texts,
+        list(texts),
         batch_size=8,
         truncation=True,
         max_length=256,
@@ -112,7 +111,7 @@ reviews_df = normalize_reviews(load_json(REVIEWS_PATH))
 # UI
 # ----------------------------
 st.title("E-commerce Brand Reputation Monitor (2023)")
-st.caption("web-scraping.dev (Products / Testimonials / Reviews) + HuggingFace sentiment analysis")
+st.caption("Scraped from web-scraping.dev (Products / Testimonials / Reviews) + Sentiment Analysis")
 
 st.sidebar.header("Navigation")
 page = st.sidebar.radio("Go to", ["Products", "Testimonials", "Reviews"], index=2)
@@ -138,13 +137,15 @@ else:
         st.warning("reviews.json is empty or missing.")
         st.stop()
 
+    # только 2023
     reviews_2023 = reviews_df.dropna(subset=["date"]).copy()
     reviews_2023 = reviews_2023[reviews_2023["date"].dt.year == 2023].copy()
 
     if reviews_2023.empty:
-        st.warning("No valid 2023 dates found in reviews.json.")
+        st.warning("No valid 2023 reviews found.")
         st.stop()
 
+    # выбор месяца
     months = pd.period_range("2023-01", "2023-12", freq="M")
     month_labels = [m.strftime("%b %Y") for m in months]
 
@@ -156,19 +157,26 @@ else:
     selected_period = pd.Period(selected_label, freq="M")
 
     filtered = reviews_2023[reviews_2023["date"].dt.to_period("M") == selected_period].copy()
+    filtered = filtered.sort_values("date", ascending=False)
+
     if filtered.empty:
         st.info(f"No reviews found for {selected_label}.")
         st.stop()
 
-    # Оптимизация по умолчанию: показываем мало
+    # ---- Оптимизация: по умолчанию минимум ----
     st.sidebar.subheader("Reviews limits")
-    max_n = st.sidebar.slider("Max reviews to analyze", 5, 30, 10, step=5)   # <= дефолт 10
-    auto_run = st.sidebar.checkbox("Auto-run sentiment", value=False)        # <= дефолт OFF
+    max_n = st.sidebar.slider("Max reviews to analyze", 5, 30, 5, step=5)  # дефолт 5
+    auto_run = st.sidebar.checkbox("Auto-run sentiment", value=False)       # дефолт OFF
 
-    filtered = filtered.sort_values("date", ascending=False).head(max_n)
+    # берем только N последних
+    filtered_n = filtered.head(max_n).copy()
 
     st.subheader("Preview (fast)")
-    st.dataframe(filtered[["date", "text"]], use_container_width=True)
+    st.dataframe(
+        filtered_n[["date", "text", "source_url"]],
+        use_container_width=True,
+        height=320
+    )
 
     run_now = auto_run or st.button("Run sentiment analysis")
 
@@ -176,14 +184,22 @@ else:
         st.info("Sentiment analysis is paused. Enable Auto-run or press the button.")
         st.stop()
 
-    with st.spinner("Running HuggingFace sentiment analysis (first run may download the model)..."):
-        texts = filtered["text"].astype(str).tolist()
-        results = analyze_texts(texts)
+    # ---- Анализ ----
+    try:
+        with st.spinner("Running sentiment analysis (first run may download the model)..."):
+            texts = tuple(filtered_n["text"].astype(str).tolist())
+            results = analyze_texts(texts)
 
-    analyzed = filtered.copy()
-    analyzed["sentiment"] = [r["label"] for r in results]
-    analyzed["confidence"] = [float(r["score"]) for r in results]
+        analyzed = filtered_n.copy()
+        analyzed["sentiment"] = [r["label"] for r in results]
+        analyzed["confidence"] = [float(r["score"]) for r in results]
 
+    except Exception as e:
+        st.error("Sentiment model failed to load/run. Check requirements/runtime on Render.")
+        st.exception(e)
+        st.stop()
+
+    # ---- Визуализация ----
     st.subheader("Results")
     col1, col2 = st.columns([1, 2])
 
@@ -196,4 +212,9 @@ else:
         st.bar_chart(counts)
 
     st.subheader("Reviews + sentiment")
-    st.dataframe(analyzed[["date", "text", "sentiment", "confidence"]], use_container_width=True)
+    st.dataframe(
+        analyzed[["date", "text", "sentiment", "confidence", "source_url"]],
+        use_container_width=True,
+        height=420
+    )
+
