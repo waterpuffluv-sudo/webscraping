@@ -1,9 +1,7 @@
 name: Run scraper and update JSON
 
 on:
-  workflow_dispatch: {}   # запуск вручную кнопкой
-  # schedule:
-  #   - cron: "0 6 * * *"  # если захочешь запускать каждый день (UTC)
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -30,10 +28,11 @@ jobs:
         run: |
           python scraper.py
 
-      - name: Commit updated JSON files
+      - name: Commit updated JSON
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add products.json reviews.json testimonials.json
           git commit -m "Auto-update scraped data" || echo "No changes to commit"
           git push
+
