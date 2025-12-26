@@ -1,1 +1,492 @@
-[]
+[
+  {
+    "name": "Box of Chocolate Candy",
+    "description": "",
+    "price": "24.99",
+    "page": 1,
+    "source_url": "https://web-scraping.dev/products?page=1"
+  },
+  {
+    "name": "Dark Red Energy Potion",
+    "description": "",
+    "price": "4.99",
+    "page": 1,
+    "source_url": "https://web-scraping.dev/products?page=1"
+  },
+  {
+    "name": "Teal Energy Potion",
+    "description": "",
+    "price": "4.99",
+    "page": 1,
+    "source_url": "https://web-scraping.dev/products?page=1"
+  },
+  {
+    "name": "Red Energy Potion",
+    "description": "",
+    "price": "4.99",
+    "page": 1,
+    "source_url": "https://web-scraping.dev/products?page=1"
+  },
+  {
+    "name": "Blue Energy Potion",
+    "description": "",
+    "price": "4.99",
+    "page": 1,
+    "source_url": "https://web-scraping.dev/products?page=1"
+  },
+  {
+    "name": "Dragon Energy Potion",
+    "description": "",
+    "price": "4.99",
+    "page": 2,
+    "source_url": "https://web-scraping.dev/products?page=2"
+  },
+  {
+    "name": "Hiking Boots for Outdoor Adventures",
+    "description": "",
+    "price": "89.99",
+    "page": 2,
+    "source_url": "https://web-scraping.dev/products?page=2"
+  },
+  {
+    "name": "Women's High Heel Sandals",
+    "description": "",
+    "price": "59.99",
+    "page": 2,
+    "source_url": "https://web-scraping.dev/products?page=2"
+  },
+  {
+    "name": "Running Shoes for Men",
+    "description": "",
+    "price": "49.99",
+    "page": 2,
+    "source_url": "https://web-scraping.dev/products?page=2"
+  },
+  {
+    "name": "Kids' Light-Up Sneakers",
+    "description": "",
+    "price": "29.99",
+    "page": 2,
+    "source_url": "https://web-scraping.dev/products?page=2"
+  },
+  {
+    "name": "Classic Leather Sneakers",
+    "description": "",
+    "price": "79.99",
+    "page": 3,
+    "source_url": "https://web-scraping.dev/products?page=3"
+  },
+  {
+    "name": "Cat-Ear Beanie",
+    "description": "",
+    "price": "14.99",
+    "page": 3,
+    "source_url": "https://web-scraping.dev/products?page=3"
+  },
+  {
+    "name": "Box of Chocolate Candy",
+    "description": "",
+    "price": "24.99",
+    "page": 3,
+    "source_url": "https://web-scraping.dev/products?page=3"
+  },
+  {
+    "name": "Dark Red Energy Potion",
+    "description": "",
+    "price": "4.99",
+    "page": 3,
+    "source_url": "https://web-scraping.dev/products?page=3"
+  },
+  {
+    "name": "Teal Energy Potion",
+    "description": "",
+    "price": "4.99",
+    "page": 3,
+    "source_url": "https://web-scraping.dev/products?page=3"
+  },
+  {
+    "name": "Red Energy Potion",
+    "description": "",
+    "price": "4.99",
+    "page": 4,
+    "source_url": "https://web-scraping.dev/products?page=4"
+  },
+  {
+    "name": "Blue Energy Potion",
+    "description": "",
+    "price": "4.99",
+    "page": 4,
+    "source_url": "https://web-scraping.dev/products?page=4"
+  },
+  {
+    "name": "Dragon Energy Potion",
+    "description": "",
+    "price": "4.99",
+    "page": 4,
+    "source_url": "https://web-scraping.dev/products?page=4"
+  },
+  {
+    "name": "Hiking Boots for Outdoor Adventures",
+    "description": "",
+    "price": "89.99",
+    "page": 4,
+    "source_url": "https://web-scraping.dev/products?page=4"
+  },
+  {
+    "name": "Women's High Heel Sandals",
+    "description": "",
+    "price": "59.99",
+    "page": 4,
+    "source_url": "https://web-scraping.dev/products?page=4"
+  },
+  {
+    "name": "Running Shoes for Men",
+    "description": "",
+    "price": "49.99",
+    "page": 5,
+    "source_url": "https://web-scraping.dev/products?page=5"
+  },
+  {
+    "name": "Kids' Light-Up Sneakers",
+    "description": "",
+    "price": "29.99",
+    "page": 5,
+    "source_url": "https://web-scraping.dev/products?page=5"
+  },
+  {
+    "name": "Classic Leather Sneakers",
+    "description": "",
+    "price": "79.99",
+    "page": 5,
+    "source_url": "https://web-scraping.dev/products?page=5"
+  },
+  {
+    "name": "Cat-Ear Beanie",
+    "description": "",
+    "price": "14.99",
+    "page": 5,
+    "source_url": "https://web-scraping.dev/products?page=5"
+  },
+  {
+    "name": "Box of Chocolate Candy",
+    "description": "",
+    "price": "24.99",
+    "page": 5,
+    "source_url": "https://web-scraping.dev/products?page=5"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 6,
+    "source_url": "https://web-scraping.dev/products?page=6"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 7,
+    "source_url": "https://web-scraping.dev/products?page=7"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 8,
+    "source_url": "https://web-scraping.dev/products?page=8"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 9,
+    "source_url": "https://web-scraping.dev/products?page=9"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 10,
+    "source_url": "https://web-scraping.dev/products?page=10"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 11,
+    "source_url": "https://web-scraping.dev/products?page=11"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 12,
+    "source_url": "https://web-scraping.dev/products?page=12"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 13,
+    "source_url": "https://web-scraping.dev/products?page=13"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 14,
+    "source_url": "https://web-scraping.dev/products?page=14"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 15,
+    "source_url": "https://web-scraping.dev/products?page=15"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 16,
+    "source_url": "https://web-scraping.dev/products?page=16"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 17,
+    "source_url": "https://web-scraping.dev/products?page=17"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 18,
+    "source_url": "https://web-scraping.dev/products?page=18"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 19,
+    "source_url": "https://web-scraping.dev/products?page=19"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 20,
+    "source_url": "https://web-scraping.dev/products?page=20"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 21,
+    "source_url": "https://web-scraping.dev/products?page=21"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 22,
+    "source_url": "https://web-scraping.dev/products?page=22"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 23,
+    "source_url": "https://web-scraping.dev/products?page=23"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 24,
+    "source_url": "https://web-scraping.dev/products?page=24"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 25,
+    "source_url": "https://web-scraping.dev/products?page=25"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 26,
+    "source_url": "https://web-scraping.dev/products?page=26"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 27,
+    "source_url": "https://web-scraping.dev/products?page=27"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 28,
+    "source_url": "https://web-scraping.dev/products?page=28"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 29,
+    "source_url": "https://web-scraping.dev/products?page=29"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 30,
+    "source_url": "https://web-scraping.dev/products?page=30"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 31,
+    "source_url": "https://web-scraping.dev/products?page=31"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 32,
+    "source_url": "https://web-scraping.dev/products?page=32"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 33,
+    "source_url": "https://web-scraping.dev/products?page=33"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 34,
+    "source_url": "https://web-scraping.dev/products?page=34"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 35,
+    "source_url": "https://web-scraping.dev/products?page=35"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 36,
+    "source_url": "https://web-scraping.dev/products?page=36"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 37,
+    "source_url": "https://web-scraping.dev/products?page=37"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 38,
+    "source_url": "https://web-scraping.dev/products?page=38"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 39,
+    "source_url": "https://web-scraping.dev/products?page=39"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 40,
+    "source_url": "https://web-scraping.dev/products?page=40"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 41,
+    "source_url": "https://web-scraping.dev/products?page=41"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 42,
+    "source_url": "https://web-scraping.dev/products?page=42"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 43,
+    "source_url": "https://web-scraping.dev/products?page=43"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 44,
+    "source_url": "https://web-scraping.dev/products?page=44"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 45,
+    "source_url": "https://web-scraping.dev/products?page=45"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 46,
+    "source_url": "https://web-scraping.dev/products?page=46"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 47,
+    "source_url": "https://web-scraping.dev/products?page=47"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 48,
+    "source_url": "https://web-scraping.dev/products?page=48"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 49,
+    "source_url": "https://web-scraping.dev/products?page=49"
+  },
+  {
+    "name": "<",
+    "description": "",
+    "price": null,
+    "page": 50,
+    "source_url": "https://web-scraping.dev/products?page=50"
+  }
+]
