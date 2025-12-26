@@ -1,10 +1,6 @@
-app.py
-scraper.py
-precompute_sentiment.py
-requirements.txt
-requirements-ml.txt
-reviews.json
-reviews_scored.json
-products.json
-testimonials.json
-.github/workflows/update_data.yml
+pandas
+selenium
+beautifulsoup4
+lxml
+transformers
+torch
