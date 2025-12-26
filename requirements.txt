@@ -1,0 +1,8 @@
+streamlit
+pandas
+altair
+transformers
+torch
+selenium
+beautifulsoup4
+lxml
