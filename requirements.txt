@@ -2,6 +2,3 @@ streamlit
 pandas
 transformers
 torch
-selenium
-beautifulsoup4
-lxml
